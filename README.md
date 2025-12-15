@@ -33,6 +33,7 @@ This project demonstrates best practices for modern Python backend development, 
 
 ## Project Structure
 
+FastAPI-Backend
 ├── src/
 │ ├── auth_router.py # Authentication routes
 │ ├── database.py # Database session and connection handling
