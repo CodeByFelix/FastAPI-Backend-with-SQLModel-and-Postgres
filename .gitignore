@@ -1,0 +1,4 @@
+__pycache__/
+myenv/
+src/__pycache__/
+.env
