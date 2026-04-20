@@ -1,6 +1,4 @@
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType, NameEmail
-from pydantic import BaseModel
-from typing import List
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from src.settings import settings
 from src.loggings import logging
 
@@ -17,7 +15,7 @@ config = ConnectionConfig (
     VALIDATE_CERTS = True
 )
 
-async def sendEmail (to_email:str, subject:str, html_body:str) -> bool:
+async def send_email (to_email: str, subject: str, html_body: str) -> bool:
     message = MessageSchema (
         subject=subject,
         recipients=[to_email],
@@ -31,4 +29,3 @@ async def sendEmail (to_email:str, subject:str, html_body:str) -> bool:
     except Exception as e:
         logging.exception ("Error sending mail")
         return False
-

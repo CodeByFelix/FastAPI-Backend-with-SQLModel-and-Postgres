@@ -1,51 +1,70 @@
-# FastAPI Authentication Backend with Email OTP Verification
+# FastAPI Authentication Backend with Security
 
-A sample backend authentication system built with **FastAPI**, **SQLModel**, and **JWT**, featuring secure user signup, login, and email verification using one-time passwords (OTP).
-
-This project demonstrates best practices for modern Python backend development, including async database access, password hashing, token-based authentication, and dependency injection.
+A secure backend authentication system built with **FastAPI**, **SQLModel**, and **JWT**, featuring user signup, login, email verification via OTP, active session management, and layered security middleware.
 
 ---
 
 ## Features
 
-- User registration (signup)
-- Secure password hashing (bcrypt via passlib)
-- User login with JWT authentication
+### Authentication & Authorization
+- User registration with strong password validation
+- Secure password hashing (bcrypt via Passlib)
+- JWT-based login with Bearer token authentication
 - Protected routes using dependency-based authentication
-- Email verification using time-bound OTP
-- Async database operations with SQLAlchemy / SQLModel
-- Structured request and response validation with Pydantic
-- Centralized logging and error handling
+- Email verification using time-bound OTP (1-minute expiry)
+
+### Session & Device Management
+- Multi-device session tracking with device fingerprinting (IP, OS, Browser, Device Type)
+- View all active sessions across devices
+- Revoke individual sessions or logout from all devices
+- Passive cleanup of expired tokens on login
+
+### Security Middleware
+- **Global Rate Limiting** — sliding window rate limiter (60 req/min per IP)
+- **Per-Endpoint Rate Limiting** — stricter limits on auth-sensitive routes (login, signup, OTP)
+- **Request Logging** — logs method, path, status code, client IP, and response time
+- **Security Headers** — X-Frame-Options, X-Content-Type-Options, HSTS, XSS Protection, Referrer-Policy
+- **CORS** — configurable allowed origins
 
 ---
 
 ## Tech Stack
 
-- **FastAPI** – Web framework
-- **SQLModel** – ORM and data models
-- **SQLAlchemy (Async)** – Asynchronous database access
-- **Passlib + bcrypt** – Password hashing
-- **JWT** – Authentication tokens
-- **Pydantic** – Data validation
-- **Uvicorn** – ASGI server
+| Technology | Purpose |
+|---|---|
+| **FastAPI** | Web framework |
+| **SQLModel** | ORM and data models |
+| **SQLAlchemy (Async)** | Asynchronous database access (PostgreSQL via asyncpg) |
+| **Passlib + bcrypt** | Password hashing |
+| **python-jose** | JWT token encoding/decoding |
+| **user-agents** | Device fingerprinting from User-Agent headers |
+| **fastapi-mail** | Email delivery (OTP verification) |
+| **Pydantic** | Request/response data validation |
+| **Uvicorn** | ASGI server |
 
 ---
 
 ## Project Structure
 
+```
 FastAPI-Backend/
 ├── src/
-│ ├── auth_router.py # Authentication routes
-│ ├── database.py # Database session and connection handling
-│ ├── schema.py # SQLModel & Pydantic schemas
-│ ├── utils.py # Password hashing, JWT, OTP utilities
-│ ├── email.py # Email sending logic
-│ ├── loggings.py # Logging configuration
-│ └── settings.py # Application settings and environment variables
+│   ├── __init__.py        # Re-exports models and schemas
+│   ├── auth_router.py     # Authentication & session routes
+│   ├── database.py        # Async engine, session factory, DB init
+│   ├── model.py           # SQLModel table definitions (User, Token, OTP)
+│   ├── schema.py          # Pydantic request/response schemas
+│   ├── utils.py           # Password hashing, JWT, OTP, token management
+│   ├── email.py           # Email sending via fastapi-mail
+│   ├── middleware.py       # Rate limiting, logging, security headers
+│   ├── settings.py        # Pydantic Settings (env config)
+│   └── loggings.py        # Logging configuration
 │
-├── main.py # FastAPI application entry point
+├── main.py                # FastAPI app entry point & middleware setup
+├── .env                   # Environment variables (not committed)
 ├── requirements.txt
 └── README.md
+```
 
 ---
 
@@ -53,59 +72,73 @@ FastAPI-Backend/
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|------|---------|------------|
-| POST | `/auth/create` | Create a new user account |
-| POST | `/auth/login` | Authenticate user and return JWT |
-| GET | `/auth/logout` | Logout authenticated user |
-| GET | `/auth/user_detail` | Get current authenticated user |
-
----
+| Method | Endpoint | Auth | Rate Limit | Description |
+|--------|----------|------|------------|-------------|
+| POST | `/auth/create` | ✗ | 3/min | Create a new user account |
+| POST | `/auth/login` | ✗ | 5/min | Authenticate and receive JWT |
+| POST | `/auth/logout` | ✓ | — | Logout current session |
+| GET | `/auth/user-detail` | ✓ | — | Get current user profile |
 
 ### Email Verification
 
-| Method | Endpoint | Description |
-|------|---------|------------|
-| GET | `/auth/get_email_otp` | Send OTP to registered email |
-| GET | `/auth/verify_email?otp=XXXXXX` | Verify email using OTP |
+| Method | Endpoint | Auth | Rate Limit | Description |
+|--------|----------|------|------------|-------------|
+| POST | `/auth/get-email-otp` | ✓ | 3/min | Send OTP to registered email |
+| POST | `/auth/verify-email` | ✓ | 5/min | Verify email with OTP |
 
-- OTP expires after **1 minute**
-- OTP is invalidated after successful verification
+### Session Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/auth/sessions` | ✓ | List all active sessions with device info |
+| DELETE | `/auth/sessions/{session_id}` | ✓ | Revoke a specific session |
+| DELETE | `/auth/sessions` | ✓ | Logout from all devices |
 
 ---
 
 ## Authentication Flow
 
-1. User signs up with email and password
-2. Password is securely hashed and stored in the database
-3. User logs in and receives a JWT access token
-4. Authenticated user requests an email verification OTP
-5. OTP is sent via email and stored with an expiration time
-6. User verifies email using the OTP
-7. Email is marked as verified and OTP is removed
+1. User signs up via `POST /auth/create` with email and a strong password
+2. Password is hashed (bcrypt) and stored in the database
+3. User logs in via `POST /auth/login` and receives a JWT Bearer token
+4. Device info (IP, OS, browser, device type) is captured and stored with the token
+5. Expired tokens for the user are passively cleaned up during login
+6. Authenticated user requests an email OTP via `POST /auth/get-email-otp`
+7. A 6-digit OTP is sent to the user's email (1-minute expiry)
+8. User submits the OTP via `POST /auth/verify-email`
+9. Email is marked as verified and the OTP record is deleted
 
 ---
 
-## Password Security
+## Security Architecture
 
-- Passwords are hashed using **bcrypt**
-- Plain-text passwords are never stored
-- Secure comparison is used during verification
-- Compatible versions of passlib and bcrypt are pinned
+### Password Policy
+- Minimum 8 characters
+- At least one uppercase letter, one lowercase letter, one digit, and one special character
+- Hashed with bcrypt — plain-text passwords are never stored
 
----
+### Token Management
+- JWT tokens with configurable expiry (default: 7 days)
+- Tokens stored in database for server-side revocation
+- Expired tokens are automatically cleaned up on login
+- Invalid/expired tokens are deleted from DB when detected
 
-## Configuration (`settings.py`)
+### Rate Limiting
+| Scope | Limit |
+|-------|-------|
+| Global (all endpoints) | 60 requests/min per IP |
+| Login | 5 attempts/min per IP |
+| Account creation | 3 attempts/min per IP |
+| OTP request | 3 attempts/min per IP |
+| Email verification | 5 attempts/min per IP |
 
-Application configuration is centralized in `src/settings.py` using Pydantic settings.
-
-Typical settings include:
-
-- Database connection URL
-- JWT secret and expiry
-- Email server credentials
-
-Environment variables are loaded to avoid hardcoding sensitive values.
+### Security Headers
+All responses include:
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `X-XSS-Protection: 1; mode=block`
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- `Referrer-Policy: strict-origin-when-cross-origin`
 
 ---
 
@@ -121,6 +154,7 @@ cd FastAPI-Backend-with-SQLModel-and-Postgres
 ```bash
 python -m venv myenv
 myenv\Scripts\activate   # Windows
+source myenv/bin/activate # macOS/Linux
 ```
 
 ### 3. Install dependencies
@@ -128,52 +162,49 @@ myenv\Scripts\activate   # Windows
 pip install -r requirements.txt
 ```
 
-### 4. Run the application
+### 4. Configure environment variables
+Create a `.env` file at the project root:
+```env
+DB_HOST = your-database-host
+DB_PORT = 5432
+DB_DATABASE = postgres
+DB_USER = your-db-user
+DB_PASSWORD = your-db-password
+
+SECRET_KEY = your-jwt-secret-key
+ALGORITHM = HS256
+
+MAIL_USERNAME = your-mail-username
+MAIL_PASSWORD = your-mail-password
+MAIL_FROM = your-email@example.com
+MAIL_PORT = 2525
+MAIL_SERVER = your-smtp-server
+
+CORS_ORIGINS = *
+```
+
+### 5. Run the application
 ```bash
 uvicorn main:app --reload
 ```
 
+The API docs are available at `http://127.0.0.1:8000/docs`
 
-## Environment Variables
-
-Create a .env file at the project root:
-```python
-DB_HOST = 
-DB_PORT = 
-DB_DATABASE = 
-DB_USER = 
-DB_PASSWORD = 
-
-SECRET_KEY = 
-ALGORITHM = 
-
-MAIL_USERNAME = 
-MAIL_PASSWORD = 
-MAIL_FROM = 
-MAIL_PORT = 
-MAIL_SERVER = 
-```
+---
 
 ## Notes
 
- - This project is intended as a sample / starter authentication backend
+- This project is a starter authentication backend designed for extension into production systems
+- Easily integrates with frontend applications (Web, Mobile, SPA)
+- SSL verification is disabled for Supabase pooled connections — adjust `database.py` for your provider
 
- - Designed for extension into production systems
-
- - Easily integrates with frontend applications (Web, Mobile, SPA)
-
-
+---
 
 ## Possible Improvements
 
- - Refresh token support
-
- - Rate limiting for OTP requests
-
- - Account lockout on repeated login failures
-
- - Role-based access control (RBAC)
-
- - Background tasks for email sending
-
- - Unit and integration tests
+- Refresh token rotation
+- Account lockout on repeated login failures
+- Role-based access control (RBAC)
+- Background tasks for email sending
+- Unit and integration tests
+- Redis-backed rate limiting for multi-process deployments

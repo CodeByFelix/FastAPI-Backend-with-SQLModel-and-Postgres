@@ -14,8 +14,16 @@ class Settings (BaseSettings):
     MAIL_FROM: str
     MAIL_PORT: str
     MAIL_SERVER: str
-    mailtrap_token: str
-    
+    CORS_ORIGINS: str = "*"
+
     model_config = SettingsConfigDict (env_file= ".env")
+
+    @property
+    def async_db_url (self) -> str:
+        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_DATABASE}"
+
+    @property
+    def cors_origin_list (self) -> list[str]:
+        return [origin.strip () for origin in self.CORS_ORIGINS.split (",")]
 
 settings = Settings ()

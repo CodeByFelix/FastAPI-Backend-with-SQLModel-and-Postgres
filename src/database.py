@@ -6,26 +6,30 @@ from src.settings import settings
 
 import ssl
 
-class DB_Connection_Error (Exception):
+
+class DbConnectionError (Exception):
     pass
 
-
-user = settings.DB_USER
-password = settings.DB_PASSWORD
-host = settings.DB_HOST
-port = settings.DB_PORT
-database = settings.DB_DATABASE
 
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False   # important for Supabase pooled endpoints
 ssl_context.verify_mode = ssl.CERT_NONE
 
-DB_URL = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+DB_URL = settings.async_db_url
 
-#print (DB_URL)
-engine = create_async_engine (url=DB_URL, echo=False, future=True, connect_args={"ssl": ssl_context})
+engine = create_async_engine (
+    url=DB_URL, 
+    echo=False, 
+    future=True, 
+    connect_args={"ssl": ssl_context},
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+)
 
-AsyncSessionLocal = sessionmaker (
+async_session_local = sessionmaker (
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
@@ -33,20 +37,18 @@ AsyncSessionLocal = sessionmaker (
     autocommit=False
 )
 
-user_data = "test_data"
+USER_DATA = "user_data"
+
 
 async def init_db () -> None:
     try:
         async with engine.begin () as conn:
-            schemas = [user_data]
-            for schema in schemas:
-                await conn.execute (text (f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-                
+            await conn.execute (text (f"CREATE SCHEMA IF NOT EXISTS {USER_DATA}"))
             await conn.run_sync(SQLModel.metadata.create_all)
     except Exception as e:
-        raise DB_Connection_Error (f"Error connecting to DB {e}") from e
+        raise DbConnectionError (f"Error connecting to DB {e}") from e
 
 
 async def get_session () -> AsyncGenerator [AsyncSession, None]:
-    async with AsyncSessionLocal () as session:
+    async with async_session_local () as session:
         yield session
